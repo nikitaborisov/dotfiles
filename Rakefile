@@ -14,20 +14,20 @@ task :install => [:submodule_init, :submodules] do
   install_rvm_binstubs
 
   # this has all the runcoms from this directory.
-  file_operation(Dir.glob('git/*')) if want_to_install?('git configs (color, aliases)')
-  file_operation(Dir.glob('irb/*')) if want_to_install?('irb/pry configs (more colorful)')
-  file_operation(Dir.glob('ruby/*')) if want_to_install?('rubygems config (faster/no docs)')
-  file_operation(Dir.glob('ctags/*')) if want_to_install?('ctags config (better js/ruby support)')
-  file_operation(Dir.glob('tmux/*')) if want_to_install?('tmux config')
-  file_operation(Dir.glob('vimify/*')) if want_to_install?('vimification of command line tools')
+  install_files(Dir.glob('git/*')) if want_to_install?('git configs (color, aliases)')
+  install_files(Dir.glob('irb/*')) if want_to_install?('irb/pry configs (more colorful)')
+  install_files(Dir.glob('ruby/*')) if want_to_install?('rubygems config (faster/no docs)')
+  install_files(Dir.glob('ctags/*')) if want_to_install?('ctags config (better js/ruby support)')
+  install_files(Dir.glob('tmux/*')) if want_to_install?('tmux config')
+  install_files(Dir.glob('vimify/*')) if want_to_install?('vimification of command line tools')
   if want_to_install?('vim configuration (highly recommended)')
-    file_operation(Dir.glob('{vim,vimrc}'))
+    install_files(Dir.glob('{vim,vimrc}'))
     Rake::Task["install_vundle"].execute
   end
 
   Rake::Task["install_prezto"].execute
 
-  install_fonts if RUBY_PLATFORM.downcase.include?("darwin")
+  install_fonts
 
   install_term_theme if RUBY_PLATFORM.downcase.include?("darwin")
 
@@ -42,6 +42,7 @@ task :install_prezto do
   end
 end
 
+desc 'Updates the installation'
 task :update do
   Rake::Task["vundle_migration"].execute if needs_migration_to_vundle?
   Rake::Task["install"].execute
@@ -94,7 +95,7 @@ desc "Runs Vundle installer in a clean vim environment"
 task :install_vundle do
   puts "======================================================"
   puts "Installing and updating vundles."
-  puts "The installer will now proceed to run BundleInstall."
+  puts "The installer will now proceed to run PluginInstall to install vundles."
   puts "======================================================"
 
   puts ""
@@ -157,7 +158,7 @@ def install_homebrew
     puts "Installing Homebrew, the OSX package manager...If it's"
     puts "already installed, this will do nothing."
     puts "======================================================"
-    run %{ruby -e "$(curl -fsSL https://raw.github.com/Homebrew/homebrew/go/install)"}
+    run %{ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"}
   end
 
   puts
@@ -171,8 +172,8 @@ def install_homebrew
   puts "======================================================"
   puts "Installing Homebrew packages...There may be some warnings."
   puts "======================================================"
-  run %{brew install zsh ctags git hub tmux reattach-to-user-namespace the_silver_searcher}
-  run %{brew install macvim --custom-icons --override-system-vim --with-lua --with-luajit}
+  run %{brew install zsh ctags git hub tmux reattach-to-user-namespace the_silver_searcher ghi hub}
+  run %{brew install macvim --custom-icons --with-override-system-vim --with-lua --with-luajit}
   puts
   puts
 end
@@ -181,7 +182,8 @@ def install_fonts
   puts "======================================================"
   puts "Installing patched fonts for Powerline/Lightline."
   puts "======================================================"
-  run %{ cp -f $HOME/.yadr/fonts/* $HOME/Library/Fonts }
+  run %{ cp -f $HOME/.yadr/fonts/* $HOME/Library/Fonts } if RUBY_PLATFORM.downcase.include?("darwin")
+  run %{ mkdir -p ~/.fonts && cp ~/.yadr/fonts/* ~/.fonts && fc-cache -vf ~/.fonts } if RUBY_PLATFORM.downcase.include?("linux")
   puts
 end
 
@@ -207,6 +209,9 @@ def install_term_theme
   # Ask the user which theme he wants to install
   message = "Which theme would you like to apply to your iTerm2 profile?"
   color_scheme = ask message, iTerm_available_themes
+
+  return if color_scheme == 'None'
+
   color_scheme_file = File.join('iTerm2', "#{color_scheme}.itermcolors")
 
   # Ask the user on which profile he wants to install the theme
@@ -223,7 +228,7 @@ def install_term_theme
 end
 
 def iTerm_available_themes
-   Dir['iTerm2/*.itermcolors'].map { |value| File.basename(value, '.itermcolors')}
+   Dir['iTerm2/*.itermcolors'].map { |value| File.basename(value, '.itermcolors')} << 'None'
 end
 
 def iTerm_profile_list
@@ -257,7 +262,7 @@ def install_prezto
   run %{ ln -nfs "$HOME/.yadr/zsh/prezto" "${ZDOTDIR:-$HOME}/.zprezto" }
 
   # The prezto runcoms are only going to be installed if zprezto has never been installed
-  file_operation(Dir.glob('zsh/prezto/runcoms/z*'), :copy)
+  install_files(Dir.glob('zsh/prezto/runcoms/z*'), :symlink)
 
   puts
   puts "Overriding prezto ~/.zpreztorc with YADR's zpreztorc to enable additional modules..."
@@ -294,7 +299,7 @@ def want_to_install? (section)
   end
 end
 
-def file_operation(files, method = :symlink)
+def install_files(files, method = :symlink)
   files.each do |f|
     file = f.split('/').last
     source = "#{ENV["PWD"]}/#{f}"
@@ -318,9 +323,12 @@ def file_operation(files, method = :symlink)
     # Temporary solution until we find a way to allow customization
     # This modifies zshrc to load all of yadr's zsh extensions.
     # Eventually yadr's zsh extensions should be ported to prezto modules.
+    source_config_code = "for config_file ($HOME/.yadr/zsh/*.zsh) source $config_file"
     if file == 'zshrc'
-      File.open(target, 'a') do |zshrc|
-        zshrc.puts('for config_file ($HOME/.yadr/zsh/*.zsh) source $config_file')
+      File.open(target, 'a+') do |zshrc|
+        if zshrc.readlines.grep(/#{Regexp.escape(source_config_code)}/).empty?
+          zshrc.puts(source_config_code)
+        end
       end
     end
 
@@ -346,6 +354,7 @@ def apply_theme_to_iterm_profile_idx(index, color_scheme_path)
   values.flatten.each { |entry| run %{ /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':#{index}:'#{entry}'" ~/Library/Preferences/com.googlecode.iterm2.plist } }
 
   run %{ /usr/libexec/PlistBuddy -c "Merge '#{color_scheme_path}' :'New Bookmarks':#{index}" ~/Library/Preferences/com.googlecode.iterm2.plist }
+  run %{ defaults read com.googlecode.iterm2 }
 end
 
 def success_msg(action)
