@@ -24,11 +24,15 @@ function prompt_nikita_precmd {
   fi
 
   if [[ -n "$VIRTUAL_ENV" ]]; then
-    if [[ $PWD == ${VIRTUAL_ENV:h:s/Dropbox\/work/work/}* ]]; then
-      RPROMPT="%F{blue}${VIRTUAL_ENV:t}%f"
-    else
-      RPROMPT="%F{red}${VIRTUAL_ENV:h:t}/${VIRTUAL_ENV:t}%f"
+    typeset color=green
+    if [[ -n "$VIRTUALENVWRAPPER_PROJECT_FILENAME" && -f "$VIRTUAL_ENV/$VIRTUALENVWRAPPER_PROJECT_FILENAME" ]]; then
+      typeset color=red
+      typeset project_dir=$(cat "$VIRTUAL_ENV/$VIRTUALENVWRAPPER_PROJECT_FILENAME")
+      if [[ $PWD == ${VIRTUAL_ENV}* || $PWD == ${project_dir}* ]]; then
+        typeset color=blue
+      fi
     fi
+    RPROMPT="%F{$color}${VIRTUAL_ENV:t}%f"
   else
     unset RPROMPT
   fi
